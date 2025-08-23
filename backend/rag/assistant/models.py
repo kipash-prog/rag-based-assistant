@@ -71,9 +71,10 @@ class PortfolioItem(models.Model):
         if not self.content and self.source_url:
             try:
                 if self.source_type == 'pdf':
-                    file_path = self.source_url
-                    if not file_path.startswith(settings.MEDIA_ROOT):
+                    file_path = str(self.source_url)  # Convert to string
+                    if not file_path.startswith(str(settings.MEDIA_ROOT)):  # Convert MEDIA_ROOT to string
                         file_path = os.path.join(settings.MEDIA_ROOT, self.source_url.replace('media/', ''))
+                        file_path = str(file_path)  # Ensure file_path is a string
                     self.content = self.extract_pdf_content(file_path)
                 elif self.source_type in ['social_media', 'website']:
                     self.content = self.extract_web_content(self.source_url)
@@ -94,7 +95,7 @@ class PortfolioItem(models.Model):
                 logger.info(f"Generating embedding for content (length={len(self.content)})")
                 embedding = model.encode(self.content).tolist()
                 from chromadb import PersistentClient
-                client = PersistentClient(path=settings.CHROMA_DB_PATH)
+                client = PersistentClient(path=str(settings.CHROMA_DB_PATH))  # Convert to string
                 logger.info("Creating or accessing portfolio collection")
                 collection = client.get_or_create_collection("portfolio")
                 self.vector_id = f"item_{self.id}"  # Ensure consistent vector_id
@@ -109,7 +110,8 @@ class PortfolioItem(models.Model):
                         "source_type": self.source_type,
                         "source_url": self.source_url or "",
                         "metadata": metadata_json
-                    }]
+                    }],
+                    documents=[self.content]
                 )
                 logger.info(f"Successfully upserted item {self.vector_id}")
                 super().save(*args, **kwargs)  # Save again to update vector_id

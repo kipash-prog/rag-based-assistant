@@ -20,15 +20,6 @@ class QueryView(APIView):
     """Handles user queries by retrieving relevant portfolio items and generating responses via the Groq API."""
 
     def post(self, request):
-        """
-        Processes a user query to retrieve portfolio items and generate a response using the Groq API.
-
-        Args:
-            request: The HTTP POST request containing the query in JSON format.
-
-        Returns:
-            Response: JSON response with the Groq API response and matching portfolio items, or an error message.
-        """
         logger.info("Processing query request")
         serializer = QuerySerializer(data=request.data)
         if not serializer.is_valid():

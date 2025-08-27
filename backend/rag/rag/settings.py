@@ -1,22 +1,40 @@
+import os
 from pathlib import Path
 from dotenv import load_dotenv
-import os
 
+# Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
 
+# Load environment variables from .env file
+dotenv_path = os.path.join(BASE_DIR, '.env')
+if not os.path.exists(dotenv_path):
+    raise FileNotFoundError(f".env file not found at {dotenv_path}")
+load_dotenv(dotenv_path=dotenv_path)
+
+# Environment variable validation
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY not found in .env file")
-CHROMA_DB_PATH=os.getenv('CHROMA_DB_PATH', os.path.join(BASE_DIR, 'chroma_data'))
+
+CHROMA_DB_PATH = os.getenv('CHROMA_DB_PATH', os.path.join(BASE_DIR, 'chroma_data'))
 if not CHROMA_DB_PATH:
     raise ValueError("CHROMA_DB_PATH not found in .env file")
-# Build paths inside the project
-# Quick-start development settings
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-default-key')
+
+# Security settings
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-default-key')  # Default key for development
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# CORS configuration
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+CORS_ALLOW_METHODS = ['GET', 'POST', 'OPTIONS']
+CORS_ALLOW_HEADERS = ['content-type', 'authorization']
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 
 # Application definition
 INSTALLED_APPS = [
@@ -27,9 +45,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'assistant',  # Your app
+    'assistant',
     'rest_framework',
-    
 ]
 
 MIDDLEWARE = [
@@ -48,7 +65,7 @@ ROOT_URLCONF = 'rag.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -78,6 +95,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 8},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -93,11 +111,11 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files
-STATIC_URL = 'static/'
+# Static and media files
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-CHROMA_DB_PATH = os.getenv('CHROMA_DB_PATH', os.path.join(BASE_DIR, 'chroma_data'))
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -108,7 +126,7 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '[{asctime}] {levelname}: {message} ({filename}:{lineno})',
+            'format': '[{asctime}] {levelname} [{name}]: {message} ({filename}:{lineno})',
             'style': '{',
         },
     },
@@ -126,10 +144,20 @@ LOGGING = {
         },
     },
     'loggers': {
-        '': {
+        'django': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'assistant': {
             'handlers': ['file', 'console'],
             'level': 'DEBUG',
-            'propagate': True,
+            'propagate': False,
         },
     },
 }
+
+# Security enhancements
+SECURE_SSL_REDIRECT = False  # Set to True in production with HTTPS
+CSRF_COOKIE_SECURE = False   # Set to True in production with HTTPS
+SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS

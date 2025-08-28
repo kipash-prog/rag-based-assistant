@@ -6,4 +6,5 @@ urlpatterns = [
     path('upload-pdf/', views.UploadPDFView.as_view(), name='upload_pdf'),
     path('add-web-content/', views.AddWebContentView.as_view(), name='add_web_content'),
     path('add-existing-pdf/', views.AddExistingPDFView.as_view(), name='add_existing_pdf'),
+    path('refresh-url/', views.RefreshURLView.as_view(), name='refresh_url'),
 ]

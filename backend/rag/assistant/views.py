@@ -483,3 +483,66 @@ class AddExistingPDFView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
+class RefreshURLView(APIView):
+    """Re-scrape a URL, update its PortfolioItem content, and re-embed in ChromaDB."""
+
+    def post(self, request):
+        logger.info("Processing refresh URL request")
+        url = request.data.get('url')
+        title = request.data.get('title', '')
+        source_type = request.data.get('source_type', 'website')
+        metadata = request.data.get('metadata', {})
+
+        if not url:
+            return Response(
+                {"error": "'url' is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            item = PortfolioItem.objects.filter(source_url=url).first()
+            if item is None:
+                logger.info(f"No existing item for URL {url}; creating new one")
+                item = PortfolioItem(
+                    title=title or url,
+                    source_type=source_type,
+                    source_url=url,
+                    metadata=metadata,
+                )
+                # Let model.save() handle scraping and embedding
+                item.save()
+                serializer = PortfolioItemSerializer(item)
+                return Response(
+                    {"message": "URL scraped and indexed", "item": serializer.data},
+                    status=status.HTTP_201_CREATED
+                )
+
+            # Existing item: re-scrape, update content, and re-embed
+            logger.info(f"Re-scraping existing URL: {url}")
+            new_content = item.extract_web_content(url)
+            if not new_content or not new_content.strip():
+                return Response(
+                    {"error": "No extractable content from URL"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Update fields and force re-embedding by clearing vector_id
+            if title:
+                item.title = title
+            item.content = new_content
+            item.metadata = metadata or item.metadata
+            item.vector_id = None
+            item.save()
+
+            serializer = PortfolioItemSerializer(item)
+            return Response(
+                {"message": "URL refreshed and re-indexed", "item": serializer.data},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            logger.error(f"Failed to refresh URL: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Failed to refresh URL", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+

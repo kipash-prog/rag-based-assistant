@@ -90,10 +90,12 @@ class PortfolioItem(models.Model):
 
         if self.content and not self.vector_id:
             try:
-                logger.info("Loading SentenceTransformer model")
-                model = SentenceTransformer('all-MiniLM-L6-v2')
+                global _cached_st_model
+                if '_cached_st_model' not in globals() or _cached_st_model is None:
+                    logger.info("Initializing SentenceTransformer model: all-MiniLM-L6-v2")
+                    _cached_st_model = SentenceTransformer('all-MiniLM-L6-v2')
                 logger.info(f"Generating embedding for content (length={len(self.content)})")
-                embedding = model.encode(self.content).tolist()
+                embedding = _cached_st_model.encode(self.content).tolist()
                 from chromadb import PersistentClient
                 client = PersistentClient(path=str(settings.CHROMA_DB_PATH))  # Convert to string
                 logger.info("Creating or accessing portfolio collection")

@@ -131,3 +131,26 @@ $.fn.ajaxForm = function() {
     .bind('submit.form-plugin', options, doAjaxSubmit)
     .bind('click.form-plugin', options, captureSubmittingElement);
 };
+
+const handlePDFUpload = async () => {
+  try {
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]); // Replace with the actual file input
+    formData.append('title', 'Sample PDF');
+    formData.append('metadata', JSON.stringify({ author: 'John Doe' }));
+
+    const response = await fetch('/api/upload-pdf/', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to upload PDF');
+    }
+
+    const data = await response.json();
+    console.log('PDF uploaded successfully:', data);
+  } catch (error) {
+    console.error('Error uploading PDF:', error);
+  }
+};

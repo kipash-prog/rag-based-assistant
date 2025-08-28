@@ -16,7 +16,7 @@ function App() {
   const handleQuerySubmit = async () => {
     try {
       setError('');
-      const res = await axios.post('http://localhost:8000/query/', { query });
+      const res = await axios.post('http://localhost:8000/api/query/', { query });
       setResponse(res.data.response);
       setItems(res.data.items);
     } catch (error) {
@@ -31,7 +31,7 @@ function App() {
       formData.append('file', file);
       formData.append('title', title);
       formData.append('metadata', JSON.stringify({ About_me: file.name }));
-      const res = await axios.post('http://localhost:8000/upload-pdf/', formData);
+      const res = await axios.post('http://localhost:8000/api/upload-pdf/', formData);
       alert(res.data.message);
     } catch (error) {
       setError(error.response ? error.response.data.error : error.message);
@@ -41,7 +41,7 @@ function App() {
   const handleWebContentSubmit = async () => {
     try {
       setError('');
-      const res = await axios.post('http://localhost:8000/add-web-content/', {
+      const res = await axios.post('http://localhost:8000/api/add-web-content/', {
         url,
         title,
         source_type: sourceType,
@@ -56,7 +56,7 @@ function App() {
   const handleExistingPDFSubmit = async () => {
     try {
       setError('');
-      const res = await axios.post('http://localhost:8000/add-existing-pdf/', {
+      const res = await axios.post('http://localhost:8000/api/add-existing-pdf/', {
         filename,
         title,
         metadata: { About_me: filename }

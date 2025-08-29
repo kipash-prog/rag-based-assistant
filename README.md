@@ -63,6 +63,7 @@ The API is mounted at `http://localhost:8000/api/` and serves media at `http://l
 
 ## Frontend Setup
 <img width="1185" height="687" alt="image" src="https://github.com/user-attachments/assets/c7f77b3c-56c3-4f0b-b53d-5bfee57d2219" />
+
 ```bash
 cd frontend/rag-assistant
 npm install
@@ -158,4 +159,5 @@ Backend Python deps live in `backend/requirements.txt`.
 
 ## License
 MIT (or your preferred license)
+
 

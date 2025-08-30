@@ -147,7 +147,7 @@ Base: `http://localhost:8000/api/`
 ```bash
 # Backend
 cd backend/rag
-python manage.py runserver 8000
+python manage.py runserver 
 
 # Frontend
 cd frontend/rag-assistant
@@ -159,6 +159,7 @@ Backend Python deps live in `backend/requirements.txt`.
 
 ## License
 MIT (or your preferred license)
+
 
 
 

@@ -158,7 +158,7 @@ npm start
 Backend Python deps live in `backend/requirements.txt`.
 
 ## License
-MIT (or your preferred license)
+MIT
 
 
 

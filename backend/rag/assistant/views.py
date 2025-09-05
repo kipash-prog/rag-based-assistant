@@ -18,18 +18,6 @@ from django.core.files.base import ContentFile
 # Configure logger
 logger = logging.getLogger(__name__)
 
-def _is_probably_pdf(data: bytes) -> bool:
-    try:
-        if not data or len(data) < 5:
-            return False
-        if not data.startswith(b"%PDF-"):
-            return False
-        # Look for '%%EOF' near end allowing trailing whitespace
-        tail = data[-2048:]
-        return b"%%EOF" in tail
-    except Exception:
-        return False
-
 class QueryView(APIView):
     """Handles user queries by retrieving relevant portfolio items and generating responses via the Groq API."""
 
@@ -46,16 +34,14 @@ class QueryView(APIView):
         query = serializer.validated_data['query']
         logger.debug(f"Received query: {query}")
 
-        # Generate query embedding (cache model)
+        # Generate query embedding
         try:
-            global _cached_st_model
-            if '_cached_st_model' not in globals() or _cached_st_model is None:
-                logger.info("Initializing SentenceTransformer model: all-MiniLM-L6-v2")
-                _cached_st_model = SentenceTransformer('all-MiniLM-L6-v2')
-            query_embedding = _cached_st_model.encode(query).tolist()
+            logger.info("Loading SentenceTransformer model: all-MiniLM-L6-v2")
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            query_embedding = model.encode(query).tolist()
             logger.debug("Query embedding generated successfully")
         except Exception as e:
-            logger.error(f"Failed to generate query embedding: {str(e)}", exc_info=True)
+            logger.error(f"Failed to generate query embedding: {str(e)}")
             return Response(
                 {"error": "Failed to generate query embedding", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -67,16 +53,9 @@ class QueryView(APIView):
             client = chromadb.PersistentClient(path=str(settings.CHROMA_DB_PATH))
             collection = client.get_or_create_collection("portfolio")
             results = collection.query(query_embeddings=[query_embedding], n_results=5)
-            ids_list = results.get('ids', [[]])
-            vector_ids = ids_list[0] if ids_list else []
-            if not vector_ids:
-                logger.info("No relevant items found in ChromaDB for this query")
-                return Response({"response": "I couldn't find relevant items in the knowledge base for this query.", "items": []}, status=status.HTTP_200_OK)
+            vector_ids = results['ids'][0]
             logger.info(f"Retrieved vector IDs: {vector_ids}")
-            items_qs = PortfolioItem.objects.filter(vector_id__in=vector_ids)
-            # Preserve order from Chroma result
-            id_to_item = {item.vector_id: item for item in items_qs}
-            items = [id_to_item[vid] for vid in vector_ids if vid in id_to_item]
+            items = PortfolioItem.objects.filter(vector_id__in=vector_ids)
             context = [item.content for item in items]
             logger.debug(f"Context retrieved: {context[:100]}...")
         except Exception as e:
@@ -88,11 +67,11 @@ class QueryView(APIView):
 
         # Query Groq API
         try:
-            logger.info("Sending request to Groq API")
+            logger.info(f"Sending request to Groq API with key: {settings.GROQ_API_KEY[:4]}...{settings.GROQ_API_KEY[-4:]}")
             response = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 json={
-                    "model": "llama3-70b-8192",
+                    "model": "llama-3.1-8b-instant",
                     "messages": [
                         {
                             "role": "system",
@@ -148,9 +127,7 @@ class UploadPDFView(APIView):
         logger.info("Processing PDF upload request")
         logger.info(f"Incoming Content-Type: {request.content_type or 'None'}")
 
-        content_type = (request.content_type or '').lower()
-
-        if content_type.startswith('application/json'):
+        if request.content_type == 'application/json':
             logger.info("Processing JSON-based PDF upload")
             file_data = request.data.get('file')
             title = request.data.get('title', '')
@@ -162,29 +139,20 @@ class UploadPDFView(APIView):
                     {"error": "File data is required in JSON request"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # Validate and decode base64 file data
             try:
-                ext = 'pdf'
-                raw_str = file_data
-                if file_data.startswith("data:") and ";base64," in file_data:
-                    format, raw_str = file_data.split(';base64,', 1)
-                    ext = format.split('/')[-1]
-                if not raw_str or not raw_str.strip():
+                if not file_data.startswith("data:") or ";base64," not in file_data:
+                    logger.error(f"Invalid file data received: {file_data[:100]}...")
+                    raise ValueError(
+                        "Invalid base64 format. Expected 'data:<mime-type>;base64,<data>'."
+                    )
+
+                format, file_str = file_data.split(';base64,', 1)
+                ext = format.split('/')[-1]
+                if not file_str.strip():
                     raise ValueError("Base64 data is empty.")
-                # Normalize: remove whitespace/newlines
-                file_str = ''.join(raw_str.split())
-                # First attempt: standard base64 with padding fix
-                try:
-                    missing_padding = len(file_str) % 4
-                    if missing_padding:
-                        file_str += "=" * (4 - missing_padding)
-                    decoded = base64.b64decode(file_str)
-                except Exception:
-                    # Second attempt: URL-safe base64
-                    missing_padding = len(file_str) % 4
-                    if missing_padding:
-                        file_str += "=" * (4 - missing_padding)
-                    decoded = base64.urlsafe_b64decode(file_str)
-                file = ContentFile(decoded, name=f"uploaded_file.{ext}")
+                file = ContentFile(base64.b64decode(file_str), name=f"uploaded_file.{ext}")
             except ValueError as ve:
                 logger.error(f"Invalid base64 file format: {str(ve)}")
                 return Response(
@@ -197,61 +165,18 @@ class UploadPDFView(APIView):
                     {"error": "Failed to decode base64 file", "details": str(e)},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-        elif content_type.startswith('multipart/form-data'):
+        elif request.content_type == 'multipart/form-data':
             logger.info("Processing multipart/form-data PDF upload")
-            logger.debug(f"Multipart keys: data={list(request.data.keys())}, files={list(getattr(request, 'FILES', {}).keys())}")
-            if getattr(request, 'FILES', None) and 'file' in request.FILES:
-                serializer = UploadPDFSerializer(data=request.data)
-                if not serializer.is_valid():
-                    logger.error(f"Invalid PDF upload data: {serializer.errors}")
-                    return Response(
-                        {"error": "Invalid PDF upload data", "details": serializer.errors},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                file = serializer.validated_data['file']
-                title = serializer.validated_data['title']
-                metadata = serializer.validated_data['metadata']
-            else:
-                # Fallback: some clients send base64 in multipart text field
-                logger.info("No file in request.FILES; attempting base64 fallback from multipart form field")
-                file_data = request.data.get('file')
-                title = request.data.get('title', '')
-                metadata = request.data.get('metadata', {})
-                # If metadata is a JSON string, try to parse
-                if isinstance(metadata, str):
-                    try:
-                        import json as _json
-                        metadata = _json.loads(metadata)
-                    except Exception:
-                        pass
-                try:
-                    ext = 'pdf'
-                    raw_str = file_data or ''
-                    if not raw_str.strip():
-                        raise ValueError("Base64 data is empty.")
-                    # Support optional data URL prefix
-                    if raw_str.startswith("data:") and ";base64," in raw_str:
-                        format, raw_str = raw_str.split(';base64,', 1)
-                        ext = format.split('/')[-1]
-                    file_str = ''.join(raw_str.split())
-                    # Try standard base64 then URL-safe
-                    try:
-                        missing_padding = len(file_str) % 4
-                        if missing_padding:
-                            file_str += "=" * (4 - missing_padding)
-                        decoded = base64.b64decode(file_str)
-                    except Exception:
-                        missing_padding = len(file_str) % 4
-                        if missing_padding:
-                            file_str += "=" * (4 - missing_padding)
-                        decoded = base64.urlsafe_b64decode(file_str)
-                    file = ContentFile(decoded, name=f"uploaded_file.{ext}")
-                except Exception as e:
-                    logger.error(f"Failed to process multipart base64 fallback: {str(e)}")
-                    return Response(
-                        {"error": "Invalid PDF upload data", "details": "Expected a file upload or base64 string in 'file' field."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            serializer = UploadPDFSerializer(data=request.data)
+            if not serializer.is_valid():
+                logger.error(f"Invalid PDF upload data: {serializer.errors}")
+                return Response(
+                    {"error": "Invalid PDF upload data", "details": serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            file = serializer.validated_data['file']
+            title = serializer.validated_data['title']
+            metadata = serializer.validated_data['metadata']
         else:
             logger.warning("Unsupported Media Type for PDF upload")
             return Response(
@@ -267,15 +192,6 @@ class UploadPDFView(APIView):
 
         # Extract PDF content
         try:
-            # Validate that file is a PDF before parsing
-            with open(file_path, 'rb') as _fchk:
-                raw = _fchk.read()
-            if not _is_probably_pdf(raw):
-                logger.error("Uploaded file is not a valid PDF (magic/EOF check failed)")
-                return Response(
-                    {"error": "Invalid PDF file. Ensure the base64 data represents a valid PDF."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
             logger.info(f"Extracting text from PDF: {file_path}")
             with open(file_path, 'rb') as f:
                 reader = PyPDF2.PdfReader(f)
@@ -482,67 +398,4 @@ class AddExistingPDFView(APIView):
                 {"error": "Failed to save portfolio item", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-
-class RefreshURLView(APIView):
-    """Re-scrape a URL, update its PortfolioItem content, and re-embed in ChromaDB."""
-
-    def post(self, request):
-        logger.info("Processing refresh URL request")
-        url = request.data.get('url')
-        title = request.data.get('title', '')
-        source_type = request.data.get('source_type', 'website')
-        metadata = request.data.get('metadata', {})
-
-        if not url:
-            return Response(
-                {"error": "'url' is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            item = PortfolioItem.objects.filter(source_url=url).first()
-            if item is None:
-                logger.info(f"No existing item for URL {url}; creating new one")
-                item = PortfolioItem(
-                    title=title or url,
-                    source_type=source_type,
-                    source_url=url,
-                    metadata=metadata,
-                )
-                # Let model.save() handle scraping and embedding
-                item.save()
-                serializer = PortfolioItemSerializer(item)
-                return Response(
-                    {"message": "URL scraped and indexed", "item": serializer.data},
-                    status=status.HTTP_201_CREATED
-                )
-
-            # Existing item: re-scrape, update content, and re-embed
-            logger.info(f"Re-scraping existing URL: {url}")
-            new_content = item.extract_web_content(url)
-            if not new_content or not new_content.strip():
-                return Response(
-                    {"error": "No extractable content from URL"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            # Update fields and force re-embedding by clearing vector_id
-            if title:
-                item.title = title
-            item.content = new_content
-            item.metadata = metadata or item.metadata
-            item.vector_id = None
-            item.save()
-
-            serializer = PortfolioItemSerializer(item)
-            return Response(
-                {"message": "URL refreshed and re-indexed", "item": serializer.data},
-                status=status.HTTP_200_OK
-            )
-        except Exception as e:
-            logger.error(f"Failed to refresh URL: {str(e)}", exc_info=True)
-            return Response(
-                {"error": "Failed to refresh URL", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
+            

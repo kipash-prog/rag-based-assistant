@@ -1,10 +1,20 @@
+# Core Django stack
 Django>=5.0,<6.0
 djangorestframework>=3.15.0
 django-cors-headers>=4.3.1
+
+# Utilities
 python-dotenv>=1.0.1
 requests>=2.31.0
 PyPDF2>=3.0.1
 beautifulsoup4>=4.12.3
-sentence-transformers>=2.6.1
-chromadb>=0.5.5
 
+# Vector DB
+chromadb==0.5.5
+
+# ML & Data stack (pinned for NumPy compatibility)
+numpy<2
+pandas==2.2.2
+scikit-learn==1.5.1
+pyarrow==15.0.2
+sentence-transformers==3.0.1
